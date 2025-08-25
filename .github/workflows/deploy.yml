@@ -1,4 +1,4 @@
-name: Deploy SvelteKit SSR (adapter-node)
+name: Deploy SvelteKit SSR (build in CI)
 
 on:
   push:
@@ -11,8 +11,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Upload the repo to the server (skip git/.github/node_modules/.env)
-      - name: Upload repo via rsync
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install deps (CI)
+        run: npm ci
+
+      - name: Build (CI)
+        run: npm run build
+
+      # Upload repo + build to server (excludes node_modules/.env)
+      - name: Upload to server
         uses: easingthemes/ssh-deploy@v5.0.3
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -22,8 +34,8 @@ jobs:
           REMOTE_USER: ${{ secrets.SSH_USER }}
           TARGET: '/var/www/bobthered.com/app'
 
-      # Install deps, build (npm/yarn/pnpm supported), then restart service
-      - name: Build & restart service
+      # Install ONLY runtime deps on server, then restart service
+      - name: Install runtime & restart
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -32,27 +44,5 @@ jobs:
           script: |
             set -euo pipefail
             cd /var/www/bobthered.com/app
-
-            # Ensure we don't accidentally skip devDependencies during build
-            export NODE_ENV=
-            export NPM_CONFIG_PRODUCTION=
-
-            # Use the right package manager automatically
-            if [ -f pnpm-lock.yaml ]; then
-              corepack enable
-              pnpm install --frozen-lockfile
-              pnpm build
-            elif [ -f yarn.lock ]; then
-              corepack enable
-              yarn install --frozen-lockfile
-              yarn build
-            elif [ -f package-lock.json ]; then
-              npm ci
-              npm run build
-            else
-              npm install
-              npm run build
-            fi
-
-            # Restart the SSR service (passwordless via sudoers)
+            npm ci --omit=dev
             sudo -n /usr/bin/systemctl restart sveltekit-bobthered
