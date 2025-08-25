@@ -1,4 +1,4 @@
-name: Deploy (static upload)
+name: Deploy SvelteKit SSR (adapter-node)
 
 on:
   push:
@@ -11,8 +11,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Ensure target folder exists (owned by 'deploy')
-      - name: Prepare target folder
+      # rsync the repo to the server (exclude junk & secrets)
+      - name: Upload repo via rsync
+        uses: easingthemes/ssh-deploy@v5.0.3
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzvc --delete --exclude='.git' --exclude='.github' --exclude='node_modules' --exclude='.env'"
+          SOURCE: './'
+          REMOTE_HOST: ${{ secrets.SSH_HOST }}
+          REMOTE_USER: ${{ secrets.SSH_USER }}
+          TARGET: '/var/www/bobthered.com/app'
+
+      # install deps, build, restart systemd service
+      - name: Build & restart service
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -20,16 +31,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
-            mkdir -p /var/www/bobthered.com
-
-      # Upload the site folder contents to /var/www/bobthered.com
-      - name: Upload site files
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: 'site/*'
-          target: '/var/www/bobthered.com'
-          overwrite: true
-          strip_components: 1
+            cd /var/www/bobthered.com/app
+            npm ci
+            npm run build
+            sudo -n systemctl restart sveltekit-bobthered
