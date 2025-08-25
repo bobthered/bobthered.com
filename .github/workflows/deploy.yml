@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # rsync the repo to the server (exclude junk & secrets)
+      # Upload the repo to the server (skip git/.github/node_modules/.env)
       - name: Upload repo via rsync
         uses: easingthemes/ssh-deploy@v5.0.3
         env:
@@ -22,7 +22,7 @@ jobs:
           REMOTE_USER: ${{ secrets.SSH_USER }}
           TARGET: '/var/www/bobthered.com/app'
 
-      # install deps, build, restart systemd service
+      # Install deps, build (npm/yarn/pnpm supported), then restart service
       - name: Build & restart service
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -32,6 +32,27 @@ jobs:
           script: |
             set -euo pipefail
             cd /var/www/bobthered.com/app
-            npm ci
-            npm run build
-            sudo -n systemctl restart sveltekit-bobthered
+
+            # Ensure we don't accidentally skip devDependencies during build
+            export NODE_ENV=
+            export NPM_CONFIG_PRODUCTION=
+
+            # Use the right package manager automatically
+            if [ -f pnpm-lock.yaml ]; then
+              corepack enable
+              pnpm install --frozen-lockfile
+              pnpm build
+            elif [ -f yarn.lock ]; then
+              corepack enable
+              yarn install --frozen-lockfile
+              yarn build
+            elif [ -f package-lock.json ]; then
+              npm ci
+              npm run build
+            else
+              npm install
+              npm run build
+            fi
+
+            # Restart the SSR service (passwordless via sudoers)
+            sudo -n /usr/bin/systemctl restart sveltekit-bobthered
