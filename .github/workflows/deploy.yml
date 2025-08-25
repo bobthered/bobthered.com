@@ -9,14 +9,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Run a remote command on the server
+      - name: Run a remote command on the server (no sudo)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
-            sudo mkdir -p /var/www/bobthered.com
-            echo "Deployed from GitHub on $(date -u)" | sudo tee /var/www/bobthered.com/DEPLOYED.txt >/dev/null
-            sudo chown -R deploy:deploy /var/www/bobthered.com
+            set -euo pipefail
+            mkdir -p /var/www/bobthered.com
+            echo "Deployed from GitHub on $(date -u)" > /var/www/bobthered.com/DEPLOYED.txt
